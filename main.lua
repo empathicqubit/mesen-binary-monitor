@@ -80,11 +80,44 @@ local errorType = {
 };
 
 local commandType = {
+    INVALID = 0x00,
+
+    MEM_GET = 0x01,
+    MEM_SET = 0x02,
+
+    CHECKPOINT_GET = 0x11,
     CHECKPOINT_SET = 0x12,
+    CHECKPOINT_DELETE = 0x13,
+    CHECKPOINT_LIST = 0x14,
+    CHECKPOINT_TOGGLE = 0x15,
+
+    CONDITION_SET = 0x22,
+
+    REGISTERS_GET = 0x31,
+    REGISTERS_SET = 0x32,
+
+    DUMP = 0x41,
+    UNDUMP = 0x42,
+
+    RESOURCE_GET = 0x51,
+    RESOURCE_SET = 0x52,
+
+    ADVANCE_INSTRUCTIONS = 0x71,
+    KEYBOARD_FEED = 0x72,
+    EXECUTE_UNTIL_RETURN = 0x73,
 
     PING = 0x81,
+    BANKS_AVAILABLE = 0x82,
+    REGISTERS_AVAILABLE = 0x83,
+    DISPLAY_GET = 0x84,
+    VICE_INFO = 0x85,
+
+    PALETTE_GET = 0x91,
 
     EXIT = 0xaa,
+    QUIT = 0xbb,
+    RESET = 0xcc,
+    AUTOSTART = 0xdd,
 }
 
 local responseType = {
@@ -158,7 +191,6 @@ end
 
 local function responseCheckpointInfo(requestId, checkpt, hit)
     local r = {}
-    -- FIXME exec load store
 
     r[#r+1] = uint32ToLittleEndian(checkpt.num)
     r[#r+1] = boolToLittleEndian(hit)
@@ -239,10 +271,10 @@ end
 
 local nextTrap = 1
 local traps = {}
-local op = {
-    EXEC = 4,
-    LOAD = 2,
-    STORE = 1,
+local operation = {
+    READ  = 0x01,
+    WRITE = 0x02,
+    EXEC  = 0x04,
 }
 
 local trapHandle
@@ -264,11 +296,51 @@ local function addCheckpoint(start, finish, stop, enabled, op, temp)
         num = num,
     }
     traps[#traps+1] = trap
-    -- FIXME op
-    trap.registration = emu.addMemoryCallback(function()
-        trapHandle(trap)
-    end, emu.memCallbackType.cpuExec, trap.start, trap.finish)
+
+    if trap.op & operation.EXEC ~= 0 then
+        trap.execRegistration = emu.addMemoryCallback(function()
+            trapHandle(trap)
+        end, emu.memCallbackType.cpuExec, trap.start, trap.finish)
+    end
+    if trap.op & operation.READ ~= 0 then
+        trap.readRegistration = emu.addMemoryCallback(function()
+            trapHandle(trap)
+        end, emu.memCallbackType.cpuRead, trap.start, trap.finish)
+    end
+    if trap.op & operation.WRITE ~= 0 then
+        trap.writeRegistration = emu.addMemoryCallback(function()
+            trapHandle(trap)
+        end, emu.memCallbackType.cpuRead, trap.start, trap.finish)
+    end
     return trap
+end
+
+local function removeCheckpoint(num)
+    local trap
+    for i=#traps,1,-1 do
+        trap = traps[i]
+        if trap.num == num then
+            table.remove(traps, i)
+            break
+        end
+        trap = nil
+    end
+
+    if trap == nil then
+        return false
+    end
+
+    if trap.execRegistration ~= nil then
+        emu.removeMemoryCallback(trap.execRegistration, emu.memCallbackType.cpuExec, trap.start, trap.finish)
+    end
+    if trap.readRegistration ~= nil then
+        emu.removeMemoryCallback(trap.readRegistration, emu.memCallbackType.cpuRead, trap.start, trap.finish)
+    end
+    if trap.writeRegistration ~= nil then
+        emu.removeMemoryCallback(trap.writeRegistration, emu.memCallbackType.cpuWrite, trap.start, trap.finish)
+    end
+
+    return true
 end
 
 local function processCheckpointSet(command)
@@ -290,6 +362,33 @@ local function processCheckpointSet(command)
     responseCheckpointInfo(command.requestId, checkpt, 0)
 end
 
+local function processCheckpointDelete(command)
+    if command.length < 4 then
+        errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+        return
+    end
+    
+    local brkNum = readUint32(command.body, 1)
+    local success = removeCheckpoint(brkNum)
+
+    if not success then
+        errorResponse(errorType.OBJECT_MISSING, command.requestId)
+        return
+    end
+
+    response(responseType.CHECKPOINT_DELETE, errorType.OK, command.requestId, nil)
+end
+
+local function processCheckpointList(command)
+    for i = 1,#traps,1 do
+        responseCheckpointInfo(command.requestId, traps[i], false);
+    end
+
+    local r = uint32ToLittleEndian(#traps)
+
+    response(responseType.CHECKPOINT_LIST, errorType.OK, command.requestId, r);
+end
+
 local function processCommand(apiVersion, bodyLength, remainingHeader, body)
     local command = {}
     command.apiVersion = apiVersion
@@ -305,13 +404,17 @@ local function processCommand(apiVersion, bodyLength, remainingHeader, body)
 
     print(string.format("Command type: %02x", command.type))
 
-    local command_type = command.type
+    local ct = command.type
 
-    if command_type == commandType.CHECKPOINT_SET then
+    if ct == commandType.CHECKPOINT_SET then
         processCheckpointSet(command)
-    elseif command_type == commandType.PING then
+    elseif ct == commandType.CHECKPOINT_DELETE then
+        processCheckpointDelete(command)
+    elseif ct == commandType.CHECKPOINT_LIST then
+        processCheckpointList(command)
+    elseif ct == commandType.PING then
         processPing(command)
-    elseif command_type == commandType.EXIT then
+    elseif ct == commandType.EXIT then
         processExit(command)
     else
         errorResponse(errorType.CMD_INVALID_TYPE, command.requestId)
@@ -320,6 +423,11 @@ local function processCommand(apiVersion, bodyLength, remainingHeader, body)
 end
 
 local function prepareCommand()
+    if conn == nil then
+        running = true
+        return
+    end
+
     if running then
         conn:settimeout(0)
     else
@@ -398,7 +506,7 @@ function registerFrameCallback()
     frameCallback = emu.addEventCallback(frameHandle, emu.eventType.inputPolled)
 end
 
-function deregisterFrameCallback()
+function deregisterFrameCallback() 
     emu.removeEventCallback(frameCallback, emu.eventType.inputPolled)
 end
 
@@ -409,6 +517,10 @@ function trapHandle(trap)
 
     running = false
 
+    responseCheckpointInfo(requestId, trap, true)
+    if not trap.stop then
+        return
+    end
     monitorOpened()
 
     deregisterFrameCallback()
