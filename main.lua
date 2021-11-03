@@ -244,17 +244,44 @@ local function responseResumed()
 end
 
 local function monitorOpened()
+    print("Monitor opened")
     responseRegisterInfo(EVENT_ID)
     responseStopped(EVENT_ID)
 end
 
 local function monitorClosed()
+    print("Monitor closed")
     responseRegisterInfo(EVENT_ID)
     responseResumed(EVENT_ID)
 end
 
 local function errorResponse(errorCode, requestId)
     response(0, errorCode, requestId, nil)
+end
+
+local stepping = false
+local function processAdvanceInstructions(command)
+    if command.length < 3 then
+        errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+        return
+    end
+
+    local stepOverSubroutines = readBool(command.body, 1);
+    local count = readUint16(command.body, 2);
+
+    stepping = true
+    if stepOverSubroutines then
+        -- FIXME
+        emu.execute(count, emu.executeCountType.cpuInstructions)
+    else
+        emu.execute(count, emu.executeCountType.cpuInstructions)
+    end
+
+    running = true
+
+    response(responseType.ADVANCE_INSTRUCTIONS, errorType.OK, command.requestId, nil);
+
+    monitorClosed()
 end
 
 local function processPing(command)
@@ -687,7 +714,7 @@ local function processCommand(apiVersion, bodyLength, remainingHeader, body)
     command.type = readUint8(remainingHeader, 5)
     command.body = body
 
-    print(string.format("Command type: %02x", command.type))
+    print(string.format("Command start: %02x", command.type))
 
     local ct = command.type
 
@@ -712,6 +739,9 @@ local function processCommand(apiVersion, bodyLength, remainingHeader, body)
     elseif ct == commandType.REGISTERS_SET then
         processRegistersSet(command)
 
+    elseif ct == commandType.ADVANCE_INSTRUCTIONS then
+        processAdvanceInstructions(command)
+
     elseif ct == commandType.PING then
         processPing(command)
 
@@ -723,6 +753,8 @@ local function processCommand(apiVersion, bodyLength, remainingHeader, body)
         errorResponse(errorType.CMD_INVALID_TYPE, command.requestId)
         print(string.format("unknown command: %d, skipping command length %d", command.type, command.length))
     end
+
+    print(string.format("Command finished: %02x", command.type))
 end
 
 local function prepareCommand()
@@ -760,11 +792,7 @@ local function prepareCommand()
 
     local apiVersion = readUint8(data, 1)
 
-    print(string.format("API Version: %02x", apiVersion))
-
     local bodyLength = readUint32(data, 2)
-
-    print(string.format("Body Size: %x", bodyLength))
 
     local remainingHeaderSize = 5
 
@@ -814,17 +842,21 @@ function deregisterFrameCallback()
 end
 
 function trapHandle(trap)
+    print("Trap")
+
     if conn == nil then
         return
     end
 
-    running = false
-
+    if trap.stop then
+        monitorOpened()
+    end
     responseCheckpointInfo(requestId, trap, true)
     if not trap.stop then
         return
     end
-    monitorOpened()
+
+    running = false
 
     deregisterFrameCallback()
     emu.breakExecution()
@@ -832,6 +864,13 @@ function trapHandle(trap)
 end
 
 local function breakHandle()
+    print("Break")
+
+    if stepping then
+        stepping = false
+        monitorOpened()
+    end
+
     repeat
         prepareCommand()
     until running
