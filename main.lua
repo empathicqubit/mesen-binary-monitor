@@ -269,6 +269,15 @@ local function processExit(command)
     monitorClosed()
 end
 
+local function processReset(command)
+    running = true
+    emu.reset()
+
+    response(responseType.RESET, errorType.OK, command.requestId, nil)
+
+    monitorClosed()
+end
+
 local memspaces = {
     MAIN = 0,
     INVALID = -1,
@@ -366,16 +375,16 @@ local function processMemoryGet(command)
     end
 
     local requestedMemspace = readUint8(command.body, 6);
-    local requestedBanknum = readUint16(command.body, 7);
-
-    local length = endAddress - startAddress + 1;
-
     local memspace = getRequestedMemspace(requestedMemspace);
 
     if memspace == memspaces.INVALID then
         errorResponse(errorType.INVALID_MEMSPACE, command.requestId)
         return
     end
+
+    local length = endAddress - startAddress + 1;
+
+    local requestedBanknum = readUint16(command.body, 7);
 
     if not validateBanknum(memspace, requestedBanknum) then
         errorResponse(errorType.INVALID_PARAMETER, command.requestId)
@@ -594,6 +603,77 @@ local function processCheckpointToggle(command)
     response(responseType.CHECKPOINT_TOGGLE, errorType.OK, command.requestId, nil);
 end
 
+local function validateRegister(memspace, regId)
+    return memspace == memspaces.MAIN and regId >= regMeta.a.id and regId <= regMeta.status.id
+end
+
+local function processRegistersGet(command)
+    if command.length < 1 then
+        errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+        return
+    end
+
+    local requestedMemspace = readUint8(command.body, 1);
+    local memspace = getRequestedMemspace(requestedMemspace);
+
+    if memspace == memspaces.INVALID then
+        errorResponse(errorType.INVALID_MEMSPACE, command.requestId)
+        return
+    end
+
+    responseRegisterInfo(command.requestId, memspace);
+end
+
+local function processRegistersSet(command)
+    local headerSize = 3
+    local count = readUint16(command.body, 2);
+
+    if command.length < headerSize + count * (3 + 1) then
+        errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+        return
+    end
+
+    local requestedMemspace = readUint8(command.body, 1);
+    local memspace = getRequestedMemspace(requestedMemspace);
+
+    if memspace == memspaces.INVALID then
+        errorResponse(errorType.INVALID_MEMSPACE, command.requestId)
+        return
+    end
+
+    local bodyCursor = headerSize + 1;
+
+    local state = emu.getState()
+    for i=1,count do
+        local itemSize = readUint8(command.body, bodyCursor + 0)
+        local regId = readUint8(command.body, bodyCursor + 1)
+        local regVal = readUint16(command.body, bodyCursor + 2)
+
+        if itemSize < 3 then
+            errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+            return
+        end
+
+        if not validateRegister(memspace, regId) then
+            errorResponse(errorType.OBJECT_MISSING, command.requestId)
+            return
+        end
+
+        for name, meta in pairs(regMeta) do
+            if meta.id == regId then
+                state.cpu[name] = regVal
+                break
+            end
+        end
+
+        bodyCursor = bodyCursor + itemSize + 1;
+    end
+
+    emu.setState(state)
+
+    responseRegisterInfo(command.requestId, memspace);
+end
+
 local function processCommand(apiVersion, bodyLength, remainingHeader, body)
     local command = {}
     command.apiVersion = apiVersion
@@ -627,10 +707,18 @@ local function processCommand(apiVersion, bodyLength, remainingHeader, body)
     elseif ct == commandType.CHECKPOINT_TOGGLE then
         processCheckpointToggle(command)
 
+    elseif ct == commandType.REGISTERS_GET then
+        processRegistersGet(command)
+    elseif ct == commandType.REGISTERS_SET then
+        processRegistersSet(command)
+
     elseif ct == commandType.PING then
         processPing(command)
+
     elseif ct == commandType.EXIT then
         processExit(command)
+    elseif ct == commandType.RESET then
+        processReset(command)
     else
         errorResponse(errorType.CMD_INVALID_TYPE, command.requestId)
         print(string.format("unknown command: %d, skipping command length %d", command.type, command.length))
