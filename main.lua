@@ -16,8 +16,8 @@ local regMeta = {
   status =  { name = "FL", id = 5, size = 1 },
 }
 
-local host = os.getenv("FCEUX_REMOTE_HOST") or "localhost"
-local port = os.getenv("FCEUX_REMOTE_PORT") or 9355
+local host = os.getenv("MESEN_REMOTE_HOST") or "localhost"
+local port = os.getenv("MESEN_REMOTE_PORT") or 9355
 
 print("Binding to host '" ..host.. "' and port " ..port.. "...")
 
@@ -269,8 +269,148 @@ local function processExit(command)
     monitorClosed()
 end
 
-local nextTrap = 1
-local traps = {}
+local memspaces = {
+    MAIN = 0,
+    INVALID = -1,
+}
+
+local function getRequestedMemspace(requestedMemspace)
+    if requestedMemspace == 0 then
+        return memspaces.MAIN
+    else
+        return memspaces.INVALID
+    end
+end
+
+local banks = {
+    default = 0,
+    cpu = 1,
+    ppu = 2,
+    palette = 3,
+    oam = 4,
+    secondaryOam = 5
+}
+
+local function validateBanknum(memspace, banknum)
+    return memspace == memspaces.MAIN and banknum >= banks.default and banknum <= banks.secondaryOam
+end
+
+local function processMemorySet(command)
+    local newSidefx = readBool(command.body, 1)
+
+    local startAddress = readUint16(command.body, 2);
+    local endAddress = readUint16(command.body, 4);
+
+    if startAddress > endAddress then
+        errorResponse(errorType.INVALID_PARAMETER, command.requestId)
+        return
+    end
+
+    local length = endAddress - startAddress + 1;
+
+    if command.length < length + 8 then
+        errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+        return
+    end
+
+    local requestedMemspace = readUint8(command.body, 6);
+    local requestedBanknum = readUint16(command.body, 7);
+
+    local memspace = getRequestedMemspace(requestedMemspace);
+
+    if memspace == memspaces.INVALID then
+        errorResponse(errorType.INVALID_MEMSPACE, command.requestId)
+        return
+    end
+
+    if not validateBanknum(memspace, requestedBanknum) then
+        errorResponse(errorType.INVALID_PARAMETER, command.requestId)
+        return
+    end
+
+    local banknum = requestedBanknum;
+
+    if banknum == banks.default then
+        banknum = banks.cpu
+    end
+
+    if not newSidefx and ( banknum == banks.cpu or banknum == banks.ppu ) then
+        banknum = banknum + 0x100
+    end
+
+    banknum = banknum - 1
+
+    for i = 0,length - 1,1 do
+        local val = command.body:byte(8 + i + 1)
+        print(val)
+        emu.write(startAddress + i, val, banknum)
+    end
+
+    response(responseType.MEM_SET, errorType.OK, command.requestId, nil);
+end
+
+local function processMemoryGet(command)
+    if command.length < 8 then
+        errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+        return
+    end
+
+    local newSidefx = readBool(command.body, 1)
+
+    local startAddress = readUint16(command.body, 2);
+    local endAddress = readUint16(command.body, 4);
+
+    if startAddress > endAddress then
+        errorResponse(errorType.INVALID_PARAMETER, command.requestId)
+        return
+    end
+
+    local requestedMemspace = readUint8(command.body, 6);
+    local requestedBanknum = readUint16(command.body, 7);
+
+    local length = endAddress - startAddress + 1;
+
+    local memspace = getRequestedMemspace(requestedMemspace);
+
+    if memspace == memspaces.INVALID then
+        errorResponse(errorType.INVALID_MEMSPACE, command.requestId)
+        return
+    end
+
+    if not validateBanknum(memspace, requestedBanknum) then
+        errorResponse(errorType.INVALID_PARAMETER, command.requestId)
+        return
+    end
+
+    local banknum = requestedBanknum;
+
+    local r = {}
+
+    r[#r+1] = uint16ToLittleEndian(length);
+
+    if banknum == banks.default then
+        banknum = banks.cpu
+    end
+
+    if not newSidefx and ( banknum == banks.cpu or banknum == banks.ppu ) then
+        banknum = banknum + 0x100
+    end
+
+    banknum = banknum - 1
+
+    local remainingByte = length % 2 ~= 0
+    for addr=startAddress,endAddress-1,2 do
+        r[#r+1] = uint16ToLittleEndian(emu.readWord(addr, banknum))
+    end
+    if remainingByte then
+        r[#r+1] = uint8ToLittleEndian(emu.read(addr, banknum))
+    end
+
+    response(responseType.MEM_GET, errorType.OK, command.requestId, table.concat(r))
+end
+
+nextTrap = 1
+traps = {}
 local operation = {
     READ  = 0x01,
     WRITE = 0x02,
@@ -299,17 +439,23 @@ local function addCheckpoint(start, finish, stop, enabled, op, temp)
 
     if trap.op & operation.EXEC ~= 0 then
         trap.execRegistration = emu.addMemoryCallback(function()
-            trapHandle(trap)
+            if trap.enabled then
+                trapHandle(trap)
+            end
         end, emu.memCallbackType.cpuExec, trap.start, trap.finish)
     end
     if trap.op & operation.READ ~= 0 then
         trap.readRegistration = emu.addMemoryCallback(function()
-            trapHandle(trap)
+            if trap.enabled then
+                trapHandle(trap)
+            end
         end, emu.memCallbackType.cpuRead, trap.start, trap.finish)
     end
     if trap.op & operation.WRITE ~= 0 then
         trap.writeRegistration = emu.addMemoryCallback(function()
-            trapHandle(trap)
+            if trap.enabled then
+                trapHandle(trap)
+            end
         end, emu.memCallbackType.cpuRead, trap.start, trap.finish)
     end
     return trap
@@ -341,6 +487,48 @@ local function removeCheckpoint(num)
     end
 
     return true
+end
+
+local function toggleCheckpoint(enable, num)
+    for i=#traps,1,-1 do
+        trap = traps[i]
+        if trap.num == num then
+            break
+        end
+        trap = nil
+    end
+
+    if trap == nil then
+        return false
+    end
+
+    trap.enabled = enable
+
+    return true
+end
+
+local function processCheckpointGet(command)
+    if command.length < 4 then
+        errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+        return
+    end
+
+    local num = readUint32(command.body, 1);
+
+    for i=#traps,1,-1 do
+        trap = traps[i]
+        if trap.num == num then
+            break
+        end
+        trap = nil
+    end
+
+    if not trap then
+        errorResponse(errorType.OBJECT_MISSING, command.requestId)
+        return
+    end
+
+    responseCheckpointInfo(command.requestId, trap, false);
 end
 
 local function processCheckpointSet(command)
@@ -389,6 +577,23 @@ local function processCheckpointList(command)
     response(responseType.CHECKPOINT_LIST, errorType.OK, command.requestId, r);
 end
 
+local function processCheckpointToggle(command)
+    if command.length < 5 then
+        errorResponse(errorType.CMD_INVALID_LENGTH, command.requestId)
+        return
+    end
+
+    local num = readUint32(command.body, 1);
+    local enable = readBool(command.body, 5);
+    
+    if not toggleCheckpoint(enable, num) then
+        errorResponse(errorType.OBJECT_MISSING, command.requestId)
+        return
+    end
+
+    response(responseType.CHECKPOINT_TOGGLE, errorType.OK, command.requestId, nil);
+end
+
 local function processCommand(apiVersion, bodyLength, remainingHeader, body)
     local command = {}
     command.apiVersion = apiVersion
@@ -406,12 +611,22 @@ local function processCommand(apiVersion, bodyLength, remainingHeader, body)
 
     local ct = command.type
 
-    if ct == commandType.CHECKPOINT_SET then
+    if ct == commandType.MEM_GET then
+        processMemoryGet(command)
+    elseif ct == commandType.MEM_SET then
+        processMemorySet(command)
+
+    elseif ct == commandType.CHECKPOINT_GET then
+        processCheckpointGet(command)
+    elseif ct == commandType.CHECKPOINT_SET then
         processCheckpointSet(command)
     elseif ct == commandType.CHECKPOINT_DELETE then
         processCheckpointDelete(command)
     elseif ct == commandType.CHECKPOINT_LIST then
         processCheckpointList(command)
+    elseif ct == commandType.CHECKPOINT_TOGGLE then
+        processCheckpointToggle(command)
+
     elseif ct == commandType.PING then
         processPing(command)
     elseif ct == commandType.EXIT then
