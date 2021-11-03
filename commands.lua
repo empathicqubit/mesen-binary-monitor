@@ -585,7 +585,7 @@ return function(server)
     function trapHandle(trap)
         print("Trap")
 
-        if conn == nil then
+        if server.conn == nil then
             return
         end
 
