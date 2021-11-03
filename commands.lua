@@ -179,23 +179,6 @@ return function(server)
         server.response(server.responseType.PING, server.errorType.OK, command.requestId, nil)
     end
 
-    local function processExit(command)
-        server.running = true
-
-        server.response(server.responseType.EXIT, server.errorType.OK, command.requestId, nil)
-
-        me.monitorClosed()
-    end
-
-    local function processReset(command)
-        server.running = true
-        emu.reset()
-
-        server.response(server.responseType.RESET, server.errorType.OK, command.requestId, nil)
-
-        me.monitorClosed()
-    end
-
     local memspaces = {
         MAIN = 0,
         INVALID = -1,
@@ -222,6 +205,69 @@ return function(server)
         return memspace == memspaces.MAIN and banknum >= banks.default and banknum <= banks.secondaryOam
     end
 
+    local function ignoreRegister(meta)
+        return false
+    end
+
+    local function processRegistersAvailable(command)
+        if command.length < 1 then
+            server.errorResponse(server.errorType.CMD_INVALID_LENGTH, command.requestId)
+            return
+        end
+
+        local requestedMemspace = server.readUint8(command.body, 1)
+        local memspace = getRequestedMemspace(requestedMemspace)
+
+        if memspace == memspaces.INVALID then
+            server.errorResponse(server.errorType.INVALID_MEMSPACE, command.requestId)
+            return
+        end
+
+        local allRegCount = 0;
+        local responseRegCount = 0;
+
+        for name, meta in pairs(regMeta) do
+            if not ignoreRegister(meta) then
+                responseRegCount = responseRegCount + 1
+            end
+            allRegCount = allRegCount + 1
+        end
+
+        local r = {}
+
+        r[#r+1] = server.uint16ToLittleEndian(responseRegCount)
+
+        for name, meta in pairs(regMeta) do
+            if not ignoreRegister(meta) then
+                local itemSize = meta.name:len() + 3
+
+                r[#r+1] = server.uint8ToLittleEndian(itemSize)
+                r[#r+1] = server.uint8ToLittleEndian(meta.id)
+                r[#r+1] = server.uint8ToLittleEndian(meta.size * 8)
+                r[#r+1] = server.writeString(meta.name);
+            end
+        end
+
+        server.response(server.responseType.REGISTERS_AVAILABLE, server.errorType.OK, command.requestId, table.concat(r));
+    end
+
+    local function processExit(command)
+        server.running = true
+
+        server.response(server.responseType.EXIT, server.errorType.OK, command.requestId, nil)
+
+        me.monitorClosed()
+    end
+
+    local function processReset(command)
+        server.running = true
+        emu.reset()
+
+        server.response(server.responseType.RESET, server.errorType.OK, command.requestId, nil)
+
+        me.monitorClosed()
+    end
+
     local function processMemorySet(command)
         local newSidefx = server.readBool(command.body, 1)
 
@@ -241,14 +287,14 @@ return function(server)
         end
 
         local requestedMemspace = server.readUint8(command.body, 6)
-        local requestedBanknum = server.readUint16(command.body, 7)
-
         local memspace = getRequestedMemspace(requestedMemspace)
 
         if memspace == memspaces.INVALID then
             server.errorResponse(server.errorType.INVALID_MEMSPACE, command.requestId)
             return
         end
+
+        local requestedBanknum = server.readUint16(command.body, 7)
 
         if not validateBanknum(memspace, requestedBanknum) then
             server.errorResponse(server.errorType.INVALID_PARAMETER, command.requestId)
@@ -642,6 +688,8 @@ return function(server)
 
         elseif ct == server.commandType.PING then
             processPing(command)
+        elseif ct == server.commandType.REGISTERS_AVAILABLE then
+            processRegistersAvailable(command)
 
         elseif ct == server.commandType.EXIT then
             processExit(command)

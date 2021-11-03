@@ -43,6 +43,13 @@ function me.uint32ToLittleEndian(value)
     return string.char(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff)
 end
 
+function me.writeString(value)
+    if value == nil then
+        error("value is nil", 2)
+    end
+    return string.char(value:len()) .. value
+end
+
 function me.readUint32(data, index)
     return data:byte(index) + (data:byte(index + 1) << 8) + (data:byte(index + 2) << 16) + (data:byte(index + 3) << 24)
 end
