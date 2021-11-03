@@ -223,14 +223,12 @@ return function(server)
             return
         end
 
-        local allRegCount = 0;
         local responseRegCount = 0;
 
         for name, meta in pairs(regMeta) do
             if not ignoreRegister(meta) then
                 responseRegCount = responseRegCount + 1
             end
-            allRegCount = allRegCount + 1
         end
 
         local r = {}
@@ -249,6 +247,99 @@ return function(server)
         end
 
         server.response(server.responseType.REGISTERS_AVAILABLE, server.errorType.OK, command.requestId, table.concat(r));
+    end
+
+    local function processBanksAvailable(command)
+        local responseBankCount = 0;
+
+        for name, id in pairs(banks) do
+            responseBankCount = responseBankCount + 1
+        end
+
+        local r = {}
+
+        r[#r+1] = server.uint16ToLittleEndian(responseBankCount)
+
+        for name, id in pairs(banks) do
+            local itemSize = name:len() + 3
+
+            r[#r+1] = server.uint8ToLittleEndian(itemSize)
+            r[#r+1] = server.uint16ToLittleEndian(id)
+            r[#r+1] = server.writeString(name);
+        end
+
+        server.response(server.responseType.BANKS_AVAILABLE, server.errorType.OK, command.requestId, table.concat(r));
+    end
+
+    local function processExit(command)
+        server.running = true
+
+        server.response(server.responseType.EXIT, server.errorType.OK, command.requestId, nil)
+
+        me.monitorClosed()
+    end
+
+    local function processReset(command)
+        server.running = true
+        emu.reset()
+
+        server.response(server.responseType.RESET, server.errorType.OK, command.requestId, nil)
+
+        me.monitorClosed()
+    end
+
+    local function processMemorySet(command)
+        local newSidefx = server.readBool(command.body, 1)
+
+        local startAddress = server.readUint16(command.body, 2)
+        local endAddress = server.readUint16(command.body, 4)
+
+        if startAddress > endAddress then
+            server.errorResponse(server.errorType.INVALID_PARAMETER, command.requestId)
+            return
+        end
+
+        local length = endAddress - startAddress + 1
+
+        if command.length < length + 8 then
+            server.errorResponse(server.errorType.CMD_INVALID_LENGTH, command.requestId)
+            return
+        end
+
+        local requestedMemspace = server.readUint8(command.body, 6)
+        local memspace = getRequestedMemspace(requestedMemspace)
+
+        if memspace == memspaces.INVALID then
+            server.errorResponse(server.errorType.INVALID_MEMSPACE, command.requestId)
+            return
+        end
+
+        local requestedBanknum = server.readUint16(command.body, 7)
+
+        if not validateBanknum(memspace, requestedBanknum) then
+            server.errorResponse(server.errorType.INVALID_PARAMETER, command.requestId)
+            return
+        end
+
+        local banknum = requestedBanknum
+
+        if banknum == banks.default then
+            banknum = banks.cpu
+        end
+
+        if not newSidefx and ( banknum == banks.cpu or banknum == banks.ppu ) then
+            banknum = banknum + 0x100
+        end
+
+        banknum = banknum - 1
+
+        for i = 0,length - 1,1 do
+            local val = command.body:byte(8 + i + 1)
+            print(val)
+            emu.write(startAddress + i, val, banknum)
+        end
+
+        server.response(server.responseType.MEM_SET, server.errorType.OK, command.requestId, nil)
     end
 
     local function processExit(command)
@@ -690,6 +781,8 @@ return function(server)
             processPing(command)
         elseif ct == server.commandType.REGISTERS_AVAILABLE then
             processRegistersAvailable(command)
+        elseif ct == server.commandType.BANKS_AVAILABLE then
+            processBanksAvailable(command)
 
         elseif ct == server.commandType.EXIT then
             processExit(command)

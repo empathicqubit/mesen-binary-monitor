@@ -47,7 +47,7 @@ function me.writeString(value)
     if value == nil then
         error("value is nil", 2)
     end
-    return string.char(value:len()) .. value
+    return me.uint8ToLittleEndian(value:len()) .. value
 end
 
 function me.readUint32(data, index)
