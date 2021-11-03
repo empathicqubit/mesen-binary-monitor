@@ -85,6 +85,72 @@ return function(server)
         responseResumed(server.EVENT_ID)
     end
 
+    local dumps = {}
+    local function processDump(command)
+        if command.length < 3 then
+            server.errorResponse(server.errorType.CMD_INVALID_LENGTH, command.requestId)
+            return
+        end
+
+        local saveRoms = server.readBool(command.body, 1)
+        local saveDisks = server.readBool(command.body, 2)
+        local filenameLength = server.readUint8(command.body, 3)
+
+        if command.length < 3 + filenameLength then
+            server.errorResponse(server.errorType.CMD_INVALID_LENGTH, command.requestId)
+            return
+        end
+
+        local filename = command.body:sub(4, 4 + filenameLength - 1)
+
+        print("Dumping "..filename)
+
+        local dereg
+        local callback = function()
+            dumps[filename] = emu.saveSavestate()
+            server.response(server.responseType.DUMP, server.errorType.OK, command.requestId, nil)
+
+            print("Dumped "..filename)
+
+            emu.removeEventCallback(dereg, emu.eventType.startFrame)
+        end
+
+        dereg = emu.addEventCallback(callback, emu.eventType.startFrame)
+    end
+
+    local function processUndump(command)
+        if command.length < 1 then
+            server.errorResponse(server.errorType.CMD_INVALID_LENGTH, command.requestId)
+            return
+        end
+
+        local filenameLength = server.readUint8(command.body, 1)
+
+        if command.length < 1 + filenameLength then
+            server.errorResponse(server.errorType.CMD_INVALID_LENGTH, command.requestId)
+            return
+        end
+
+        local filename = command.body:sub(2, 2 + filenameLength - 1)
+
+        local dump = dumps[filename]
+        if dump == nil then
+            server.errorResponse(server.errorType.CMD_FAILURE, command.requestId)
+            return
+        end
+
+        local dereg
+        local callback = function()
+            emu.loadSavestate(dump)
+
+            local pc = emu.getState().cpu.pc
+            server.response(server.responseType.UNDUMP, server.errorType.OK, command.requestId, server.uint16ToLittleEndian(pc))
+            emu.removeEventCallback(dereg, emu.eventType.startFrame)
+        end
+
+        dereg = emu.addEventCallback(callback, emu.eventType.startFrame)
+    end
+
     local function processAdvanceInstructions(command)
         if command.length < 3 then
             server.errorResponse(server.errorType.CMD_INVALID_LENGTH, command.requestId)
@@ -563,6 +629,13 @@ return function(server)
             processRegistersGet(command)
         elseif ct == server.commandType.REGISTERS_SET then
             processRegistersSet(command)
+
+            --[[
+        elseif ct == server.commandType.DUMP then
+            processDump(command)
+        elseif ct == server.commandType.UNDUMP then
+            processUndump(command)
+            ]]
 
         elseif ct == server.commandType.ADVANCE_INSTRUCTIONS then
             processAdvanceInstructions(command)
