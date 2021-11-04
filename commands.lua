@@ -1,4 +1,4 @@
-local _p = emu.log
+local _p = print
 local function print(data)
   _p(data .. "")
 end
@@ -271,12 +271,51 @@ return function(server)
         server.response(server.responseType.BANKS_AVAILABLE, server.errorType.OK, command.requestId, table.concat(r));
     end
 
-    local function processExit(command)
-        server.running = true
+    local function processDisplayGet(command)
+        if command.apiVersion < 0x02 then
+            server.errorResponse(server.errorType.INVALID_API_VERSION, command.requestId)
+            return
+        end
 
+        local infoLength = 13;
+
+        local shot = emu.takeScreenshot()
+
+        local r = {}
+
+        -- Length of fields before display buffer
+        r[#r+1] = server.uint32ToLittleEndian(infoLength)
+
+        -- Full width of buffer
+        r[#r+1] = server.uint16ToLittleEndian(256)
+        -- Full height of buffer
+        r[#r+1] = server.uint16ToLittleEndian(240)
+        -- X offset of the inner part of the screen
+        r[#r+1] = server.uint16ToLittleEndian(0)
+        -- Y offset of the inner part of the screen
+        r[#r+1] = server.uint16ToLittleEndian(0)
+        -- Width of the inner part of the screen
+        r[#r+1] = server.uint16ToLittleEndian(256)
+        -- Height of the inner part of the screen
+        r[#r+1] = server.uint16ToLittleEndian(240)
+        -- Bits per pixel of image
+        r[#r+1] = server.uint8ToLittleEndian(24)
+
+        -- Length of display buffer
+        r[#r+1] = server.uint32ToLittleEndian(shot:len())
+
+        -- Buffer Data in requested format
+        r[#r+1] = shot
+
+        server.response(server.responseType.DISPLAY_GET, server.errorType.OK, command.requestId, table.concat(r));
+    end
+
+    local function processExit(command)
         server.response(server.responseType.EXIT, server.errorType.OK, command.requestId, nil)
 
         me.monitorClosed()
+
+        server.running = true
     end
 
     local function processReset(command)
@@ -783,6 +822,8 @@ return function(server)
             processRegistersAvailable(command)
         elseif ct == server.commandType.BANKS_AVAILABLE then
             processBanksAvailable(command)
+        elseif ct == server.commandType.DISPLAY_GET then
+            processDisplayGet(command)
 
         elseif ct == server.commandType.EXIT then
             processExit(command)
@@ -803,11 +844,10 @@ return function(server)
             return
         end
 
+        responseCheckpointInfo(server.EVENT_ID, trap, true)
         if trap.stop then
             me.monitorOpened()
-        end
-        responseCheckpointInfo(requestId, trap, true)
-        if not trap.stop then
+        else
             return
         end
 

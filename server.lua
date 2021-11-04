@@ -1,4 +1,4 @@
-local _p = emu.log
+local _p = print
 local function print(data)
   _p(data .. "")
 end
@@ -295,7 +295,7 @@ local function breakHandle()
     emu.resume()
 end
 
-function me.start(host, port)
+function me.start(host, port, waitForConnection)
     me.stepping = false
     me.running = true
 
@@ -304,7 +304,11 @@ function me.start(host, port)
     me.server = assert(socket.tcp())
     assert(me.server:bind(host, port))
     assert(me.server:listen(32))
-    me.server:settimeout(0)
+    if waitForConnection then
+        me.server:settimeout(-1)
+    else
+        me.server:settimeout(0)
+    end
 
     local i, p   = me.server:getsockname()
     assert(i, p)
@@ -314,6 +318,8 @@ function me.start(host, port)
     me.registerFrameCallback()
 
     emu.addEventCallback(breakHandle, emu.eventType.codeBreak)
+
+    emu.breakExecution()
 end
 
 return me
