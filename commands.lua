@@ -188,6 +188,19 @@ return function(server)
         me.monitorClosed()
     end
 
+    -- FIXME This should take instruction level into account
+    local function processExecuteUntilReturn(command)
+        -- FIXME
+        server.stepping = true
+        emu.execute(1, emu.executeCountType.cpuInstructions)
+
+        server.running = true
+
+        server.response(server.responseType.EXECUTE_UNTIL_RETURN, server.errorType.OK, command.requestId, nil)
+
+        me.monitorClosed()
+    end
+
     local function processPing(command)
         server.response(server.responseType.PING, server.errorType.OK, command.requestId, nil)
     end
@@ -839,6 +852,8 @@ return function(server)
 
         elseif ct == server.commandType.ADVANCE_INSTRUCTIONS then
             processAdvanceInstructions(command)
+        elseif ct == server.commandType.EXECUTE_UNTIL_RETURN then
+            processExecuteUntilReturn(command)
 
         elseif ct == server.commandType.PING then
             processPing(command)
