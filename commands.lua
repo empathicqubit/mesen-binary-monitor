@@ -91,7 +91,6 @@ return function(server)
         end
         me.open = false
         print("Monitor closed")
-        responseRegisterInfo(server.EVENT_ID)
         responseResumed(server.EVENT_ID)
     end
 

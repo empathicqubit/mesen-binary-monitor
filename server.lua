@@ -231,8 +231,8 @@ local function prepareCommand()
 
     if me.running then
         me.running = false
-        commands.monitorOpened()
     end
+    commands.monitorOpened()
     me.conn:settimeout(-1)
 
     data, status = me.conn:receive(1 + 4)
