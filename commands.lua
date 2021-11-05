@@ -4,7 +4,9 @@ local function print(data)
 end
 
 return function(server)
-    local me = {}
+    local me = {
+        open = false,
+    }
 
     local function responseCheckpointInfo(requestId, checkpt, hit)
         local r = {}
@@ -74,12 +76,20 @@ return function(server)
     end
 
     function me.monitorOpened()
+        if me.open then
+            return
+        end
+        me.open = true
         print("Monitor opened")
         responseRegisterInfo(server.EVENT_ID)
         responseStopped(server.EVENT_ID)
     end
 
     function me.monitorClosed()
+        if not me.open then
+            return
+        end
+        me.open = false
         print("Monitor closed")
         responseRegisterInfo(server.EVENT_ID)
         responseResumed(server.EVENT_ID)
@@ -849,8 +859,6 @@ return function(server)
     end
 
     function trapHandle(trap)
-        print("Trap")
-
         if server.conn == nil then
             return
         end
@@ -867,6 +875,8 @@ return function(server)
             server.deregisterFrameCallback()
             print("Break called by trap")
             emu.breakExecution()
+        else
+            print("Server not running")
         end
     end
 
