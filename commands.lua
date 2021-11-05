@@ -347,6 +347,11 @@ return function(server)
         server.running = true
     end
 
+    local function processQuit(command)
+        server.response(server.responseType.QUIT, server.errorType.OK, command.requestId, nil)
+        os.exit(0)
+    end
+
     local function processReset(command)
         server.running = true
         emu.reset()
@@ -866,6 +871,8 @@ return function(server)
 
         elseif ct == server.commandType.EXIT then
             processExit(command)
+        elseif ct == server.commandType.QUIT then
+            processQuit(command)
         elseif ct == server.commandType.RESET then
             processReset(command)
         else
