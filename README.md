@@ -2,7 +2,8 @@
 
 This is a monitor for Mesen, intended to mimic VICE's binary monitor.
 It is currently in an alpha state, and some commands are not functional or behave
-incorrectly. To use it, start up Mesen as such:
+incorrectly. To use it, make sure your script timeout is set as high as possible
+(2147483647) and start up Mesen as such:
 
 Linux:
 
