@@ -81,6 +81,10 @@ return function(server)
         end
         me.open = true
         print("Monitor opened")
+
+        local pc = emu.getState().cpu.pc
+        print(string.format("PC: %04x", pc))
+
         responseRegisterInfo(server.EVENT_ID)
         responseStopped(server.EVENT_ID)
     end
