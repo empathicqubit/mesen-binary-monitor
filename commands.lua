@@ -855,7 +855,7 @@ return function(server)
             processReset(command)
         else
             server.errorResponse(server.errorType.CMD_INVALID_TYPE, command.requestId)
-            print(string.format("unknown command: %d, skipping command length %d", command.type, command.length))
+            print(string.format("unknown command: %02x, skipping command length %d", command.type, command.length))
         end
 
         print(string.format("Command finished: %02x", command.type))
@@ -878,8 +878,6 @@ return function(server)
             server.deregisterFrameCallback()
             print("Break called by trap")
             emu.breakExecution()
-        else
-            print("Server not running")
         end
     end
 
