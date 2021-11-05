@@ -349,6 +349,7 @@ return function(server)
 
     local function processQuit(command)
         server.response(server.responseType.QUIT, server.errorType.OK, command.requestId, nil)
+        server.conn:close()
         os.exit(0)
     end
 
