@@ -272,7 +272,9 @@ return function(server)
     end
 
     local function processDisplayGet(command)
+        print("Taking screenshot")
         if command.apiVersion < 0x02 then
+            print("API Version error")
             server.errorResponse(server.errorType.INVALID_API_VERSION, command.requestId)
             return
         end
@@ -280,6 +282,7 @@ return function(server)
         local infoLength = 13;
 
         local shot = emu.takeScreenshot()
+        print("Screenshot taken")
 
         local r = {}
 
@@ -781,7 +784,15 @@ return function(server)
         command.type = server.readUint8(remainingHeader, 5)
         command.body = body
 
-        print(string.format("Command start: %02x", command.type))
+        local prettyType = ""
+        for k, v in pairs(server.commandType) do
+            if v == command.type then
+                prettyType = k
+                break
+            end
+        end
+
+        print(string.format("Command start: %02x (%s)", command.type, prettyType))
 
         local ct = command.type
 
@@ -851,11 +862,12 @@ return function(server)
             return
         end
 
-        server.running = false
-
-        server.deregisterFrameCallback()
-        emu.breakExecution()
-        server.registerFrameCallback()
+        if server.running then
+            server.running = false
+            server.deregisterFrameCallback()
+            print("Break called by trap")
+            emu.breakExecution()
+        end
     end
 
     return me

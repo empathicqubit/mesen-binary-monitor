@@ -206,8 +206,8 @@ local function initConnection()
 end
 
 local function prepareCommand()
+    initConnection()
     if me.conn == nil then
-        me.running = true
         return
     end
 
@@ -222,7 +222,6 @@ local function prepareCommand()
         return
     elseif status == "closed" then
         me.conn = nil
-        me.running = true
         return
     end
 
@@ -257,17 +256,11 @@ end
 me.deregisterFrameCallback = nil
 me.registerFrameCallback = nil
 local function frameHandle()
-    initConnection()
-
-    if me.conn == nil then
-        return
-    end
-
     prepareCommand()
     if not me.running then
         me.deregisterFrameCallback()
+        print("Break called by frame")
         emu.breakExecution()
-        me.registerFrameCallback()
     end
 end
 
@@ -280,42 +273,55 @@ function me.deregisterFrameCallback()
     emu.removeEventCallback(frameCallback, emu.eventType.inputPolled)
 end
 
+local lastTime = -1
 local function breakHandle()
-    print("Break")
+    local pc = emu.getState().cpu.pc
+    print(string.format("PC: %04x", pc))
 
     if me.stepping then
         me.stepping = false
         commands.monitorOpened()
     end
 
+    local now = socket.gettime()
+    if lastTime ~= -1 then
+        print("Took "..(now - lastTime))
+    end
+    lastTime = now
+    print("Start loop")
+    print(tostring(me.running))
     repeat
         prepareCommand()
     until me.running
+    print("End loop")
 
+    me.registerFrameCallback()
     emu.resume()
 end
 
 function me.start(host, port, waitForConnection)
     me.stepping = false
-    me.running = true
 
     print("Binding to host '" ..host.. "' and port " ..port.. "...")
 
     me.server = assert(socket.tcp())
     assert(me.server:bind(host, port))
     assert(me.server:listen(32))
+    local waitType = ""
     if waitForConnection then
+        me.running = false
         me.server:settimeout(-1)
+        waitType = "Waiting"
     else
+        me.running = true
         me.server:settimeout(0)
+        waitType = "Listening"
     end
 
-    local i, p   = me.server:getsockname()
+    local i, p = me.server:getsockname()
     assert(i, p)
 
-    print("Waiting for connection on " .. i .. ":" .. p .. "...")
-
-    me.registerFrameCallback()
+    print(string.format("%s for connection on %s:%d...", waitType, i, p))
 
     emu.addEventCallback(breakHandle, emu.eventType.codeBreak)
 
