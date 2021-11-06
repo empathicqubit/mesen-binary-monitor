@@ -9,74 +9,6 @@ local socket = require("socket.core")
 local me = {}
 local commands = dofile(baseDir.."/commands.lua")(me)
 
-me.running = false
-me.stepping = false
-me.conn = nil
-me.server = nil
-
-function me.boolToLittleEndian(b)
-    local value = 0
-    if b then
-        value = 1
-    end
-    return string.char(value & 0xff)
-end
-
-function me.uint8ToLittleEndian(value)
-    if value == nil then
-        error("value is nil", 2)
-    end
-    return string.char(value & 0xff)
-end
-
-function me.uint16ToLittleEndian(value)
-    if value == nil then
-        error("value is nil", 2)
-    end
-    return string.char(value & 0xff, (value >> 8) & 0xff)
-end
-
-function me.uint32ToLittleEndian(value)
-    if value == nil then
-        error("value is nil", 2)
-    end
-    return string.char(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff)
-end
-
-function me.writeString(value)
-    if value == nil then
-        error("value is nil", 2)
-    end
-    return me.uint8ToLittleEndian(value:len()) .. value
-end
-
-function me.readUint32(data, index)
-    return data:byte(index) + (data:byte(index + 1) << 8) + (data:byte(index + 2) << 16) + (data:byte(index + 3) << 24)
-end
-
-function me.readUint16(data, index)
-    return data:byte(index) + (data:byte(index + 1) << 8)
-end
-
-function me.readUint8(data, index)
-    return data:byte(index)
-end
-
-function me.readBool(data, index)
-    return data:byte(index) > 0
-end
-
-me.errorType = {
-    OK = 0x00,
-    OBJECT_MISSING = 0x01,
-    INVALID_MEMSPACE = 0x02,
-    CMD_INVALID_LENGTH = 0x80,
-    INVALID_PARAMETER = 0x81,
-    CMD_INVALID_API_VERSION = 0x82,
-    CMD_INVALID_TYPE = 0x83,
-    CMD_FAILURE = 0x8f,
-};
-
 me.commandType = {
     INVALID = 0x00,
 
@@ -160,9 +92,77 @@ me.responseType = {
     AUTOSTART = 0xdd,
 }
 
+me.errorType = {
+    OK = 0x00,
+    OBJECT_MISSING = 0x01,
+    INVALID_MEMSPACE = 0x02,
+    CMD_INVALID_LENGTH = 0x80,
+    INVALID_PARAMETER = 0x81,
+    CMD_INVALID_API_VERSION = 0x82,
+    CMD_INVALID_TYPE = 0x83,
+    CMD_FAILURE = 0x8f,
+};
+
 me.API_VERSION = 0x02
 
 me.EVENT_ID = 0xffffffff
+
+me.running = false
+me.stepping = false
+me.conn = nil
+me.server = nil
+
+function me.boolToLittleEndian(b)
+    local value = 0
+    if b then
+        value = 1
+    end
+    return string.char(value & 0xff)
+end
+
+function me.uint8ToLittleEndian(value)
+    if value == nil then
+        error("value is nil", 2)
+    end
+    return string.char(value & 0xff)
+end
+
+function me.uint16ToLittleEndian(value)
+    if value == nil then
+        error("value is nil", 2)
+    end
+    return string.char(value & 0xff, (value >> 8) & 0xff)
+end
+
+function me.uint32ToLittleEndian(value)
+    if value == nil then
+        error("value is nil", 2)
+    end
+    return string.char(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff)
+end
+
+function me.writeString(value)
+    if value == nil then
+        error("value is nil", 2)
+    end
+    return me.uint8ToLittleEndian(value:len()) .. value
+end
+
+function me.readUint32(data, index)
+    return data:byte(index) + (data:byte(index + 1) << 8) + (data:byte(index + 2) << 16) + (data:byte(index + 3) << 24)
+end
+
+function me.readUint16(data, index)
+    return data:byte(index) + (data:byte(index + 1) << 8)
+end
+
+function me.readUint8(data, index)
+    return data:byte(index)
+end
+
+function me.readBool(data, index)
+    return data:byte(index) > 0
+end
 
 function me.response(responseType, errorCode, requestId, body)
     if responseType == nil or errorCode == nil or requestId == nil then

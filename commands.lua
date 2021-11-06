@@ -849,12 +849,10 @@ return function(server)
         elseif ct == server.commandType.REGISTERS_SET then
             processRegistersSet(command)
 
-            --[[
         elseif ct == server.commandType.DUMP then
             processDump(command)
         elseif ct == server.commandType.UNDUMP then
             processUndump(command)
-            ]]
 
         elseif ct == server.commandType.ADVANCE_INSTRUCTIONS then
             processAdvanceInstructions(command)
