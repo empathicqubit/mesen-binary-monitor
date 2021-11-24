@@ -325,7 +325,7 @@ function me.start(host, port, waitForConnection)
 
     emu.addEventCallback(breakHandle, emu.eventType.codeBreak)
 
-    emu.breakExecution()
+    breakHandle()
 end
 
 return me
