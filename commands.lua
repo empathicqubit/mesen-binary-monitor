@@ -175,8 +175,9 @@ return function(server)
 
         server.stepping = true
         if stepOverSubroutines then
-            -- FIXME
-            emu.execute(count, emu.executeCountType.cpuInstructions)
+            for i=1,count do
+                emu.stepOver()
+            end
         else
             emu.execute(count, emu.executeCountType.cpuInstructions)
         end
@@ -192,7 +193,7 @@ return function(server)
     local function processExecuteUntilReturn(command)
         -- FIXME
         server.stepping = true
-        emu.execute(1, emu.executeCountType.cpuInstructions)
+        emu.stepOut()
 
         server.running = true
 

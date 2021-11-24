@@ -1,10 +1,10 @@
 # mesen-binary-monitor
 
-This is a monitor for Mesen, intended to mimic [VICE's binary monitor](https://vice-emu.sourceforge.io/vice_13.html).
+This is a monitor for Mesen-X, intended to mimic [VICE's binary monitor](https://vice-emu.sourceforge.io/vice_13.html).
 It is currently in an alpha state, and some commands are not functional or behave
 incorrectly. I originally wrote this to support debugging in my [VS65 Debugger](https://github.com/empathicqubit/vscode-cc65-vice-debug).
 To use it, make sure your script timeout is set as high as possible (2147483647)
-and start up Mesen as such:
+and start up Mesen-X as such:
 
 Linux:
 
