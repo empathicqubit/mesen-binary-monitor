@@ -331,6 +331,7 @@ function me.start(host, port, waitForConnection)
 
     emu.addEventCallback(breakHandle, emu.eventType.codeBreak)
 
+    initConnection()
     startupCallback = emu.addMemoryCallback(breakHandle, emu.memCallbackType.cpuExec, 0x0000, 0xffff)
 end
 
