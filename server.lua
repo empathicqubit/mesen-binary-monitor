@@ -269,12 +269,18 @@ function me.registerFrameCallback()
     frameCallback = emu.addEventCallback(frameHandle, emu.eventType.inputPolled)
 end
 
-function me.deregisterFrameCallback() 
+function me.deregisterFrameCallback()
     emu.removeEventCallback(frameCallback, emu.eventType.inputPolled)
 end
 
+local startupCallback = nil
 local lastTime = -1
 local function breakHandle()
+    if startupCallback ~= nil then
+        emu.removeMemoryCallback(startupCallback, emu.memCallbackType.cpuExec, 0x0000, 0xffff)
+        startupCallback = nil
+    end
+
     local pc = emu.getState().cpu.pc
     print(string.format("PC: %04x", pc))
 
@@ -325,7 +331,7 @@ function me.start(host, port, waitForConnection)
 
     emu.addEventCallback(breakHandle, emu.eventType.codeBreak)
 
-    breakHandle()
+    startupCallback = emu.addMemoryCallback(breakHandle, emu.memCallbackType.cpuExec, 0x0000, 0xffff)
 end
 
 return me
