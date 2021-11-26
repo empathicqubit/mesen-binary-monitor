@@ -277,6 +277,7 @@ local startupCallback = nil
 local lastTime = -1
 local function breakHandle()
     if startupCallback ~= nil then
+        emu.reset()
         emu.removeMemoryCallback(startupCallback, emu.memCallbackType.cpuExec, 0x0000, 0xffff)
         startupCallback = nil
     end
