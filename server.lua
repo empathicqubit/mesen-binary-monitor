@@ -44,6 +44,10 @@ me.commandType = {
 
     PALETTE_GET = 0x91,
 
+    JOYPORT_SET = 0xa2,
+
+    USERPORT_SET = 0xb2,
+
     EXIT = 0xaa,
     QUIT = 0xbb,
     RESET = 0xcc,
@@ -85,6 +89,10 @@ me.responseType = {
     VICE_INFO = 0x85,
 
     PALETTE_GET = 0x91,
+
+    JOYPORT_SET = 0xa2,
+
+    USERPORT_SET = 0xb2,
 
     EXIT = 0xaa,
     QUIT = 0xbb,

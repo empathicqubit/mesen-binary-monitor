@@ -340,6 +340,51 @@ return function(server)
         server.response(server.responseType.DISPLAY_GET, server.errorType.OK, command.requestId, table.concat(r));
     end
 
+    local JOYPORT_BITS = {
+        UP = 0,
+        DOWN = 1,
+        LEFT = 2,
+        RIGHT = 3,
+        A = 4,
+        B = 5,
+        SELECT = 6,
+        START = 7,
+    }
+
+    local function processJoyportSet(command)
+        if command.length < 4 then
+            server.errorResponse(server.errorType.CMD_INVALID_LENGTH, command.requestId)
+            return
+        end
+
+        local port = server.readUint16(command.body, 1)
+        local value = server.readUint16(command.body, 3)
+
+        if port > 3 then
+            server.errorResponse(server.errorType.OBJECT_MISSING, command.requestId)
+            return
+        end
+
+        if value > 0xff then
+            server.errorResponse(server.errorType.INVALID_PARAMETER, command.requestId)
+            return
+        end
+
+        local state = {
+            a = ((value & JOYPORT_BITS.A) ~= 0),
+            b = ((value & JOYPORT_BITS.B) ~= 0),
+            select = ((value & JOYPORT_BITS.SELECT) ~= 0),
+            start = ((value & JOYPORT_BITS.START) ~= 0),
+            up = ((value & JOYPORT_BITS.UP) ~= 0),
+            down = ((value & JOYPORT_BITS.DOWN) ~= 0),
+            left = ((value & JOYPORT_BITS.LEFT) ~= 0),
+            right = ((value & JOYPORT_BITS.RIGHT) ~= 0),
+        }
+        emu.setInput(port, state)
+
+        server.response(server.responseType.JOYPORT_SET, server.errorType.OK, command.requestId, nil);
+    end
+
     local function processExit(command)
         server.response(server.responseType.EXIT, server.errorType.OK, command.requestId, nil)
 
@@ -868,6 +913,9 @@ return function(server)
             processBanksAvailable(command)
         elseif ct == server.commandType.DISPLAY_GET then
             processDisplayGet(command)
+
+        elseif ct == server.commandType.JOYPORT_SET then
+            processJoyportSet(command)
 
         elseif ct == server.commandType.EXIT then
             processExit(command)

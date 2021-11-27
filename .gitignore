@@ -1,0 +1,11 @@
+.DS_Store
+*.s??
+*~
+*.log
+*.zip
+*.env
+
+*.orig
+*.rej
+
+*.sf-*
