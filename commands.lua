@@ -341,14 +341,14 @@ return function(server)
     end
 
     local JOYPORT_BITS = {
-        UP = 0,
-        DOWN = 1,
-        LEFT = 2,
-        RIGHT = 3,
-        A = 4,
-        B = 5,
-        SELECT = 6,
-        START = 7,
+        UP =     0x01,
+        DOWN =   0x02,
+        LEFT =   0x04,
+        RIGHT =  0x08,
+        A =      0x10,
+        B =      0x20,
+        SELECT = 0x40,
+        START =  0x80,
     }
 
     local function processJoyportSet(command)
